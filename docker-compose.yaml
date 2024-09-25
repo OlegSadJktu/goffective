@@ -1,0 +1,10 @@
+services:
+  db:
+    image: postgres
+    container_name: goffective-db
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_PASSWORD=${PG_PASSWORD}
+      - POSTGRES_USER=${PG_USER}
+      - POSTGRES_DB=${PG_DATABASE}
