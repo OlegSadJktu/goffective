@@ -4,10 +4,15 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
+	"time"
 
 	"github.com/OlegSadJktu/goffective/internal/config"
+	mid "github.com/OlegSadJktu/goffective/internal/httpserver/middleware"
 	"github.com/OlegSadJktu/goffective/internal/storage"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 const (
@@ -66,5 +71,15 @@ func main() {
 		slog.Error(err.Error())
 		os.Exit(1)
 	}
+
+	router := chi.NewRouter()
+
+	router.Use(mid.NewHttpLogger(log))
+	router.Use(middleware.Timeout(60 * time.Second))
+	router.Route("/songs", func(r chi.Router) {
+	})
+
+	err = http.ListenAndServe(fmt.Sprintf(":%v", cfg.Server.Port), router)
+	slog.Error(err.Error())
 
 }
