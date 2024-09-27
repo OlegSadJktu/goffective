@@ -1,11 +1,16 @@
 package main
 
 import (
+	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"path"
+	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/OlegSadJktu/goffective/internal/config"
@@ -13,6 +18,9 @@ import (
 	"github.com/OlegSadJktu/goffective/internal/storage"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
 const (
@@ -22,7 +30,13 @@ const (
 )
 
 var (
-	env = flag.String("env", ".env", "Configuration file")
+	_, b, _, _ = runtime.Caller(0)
+	basepath   = filepath.Dir(b)
+)
+
+var (
+	env            = flag.String("env", ".env", "Configuration file")
+	migrationsPath = flag.String("migrations", "./postgres/migrations", "Migrations path")
 )
 
 func setupLogger(env string) *slog.Logger {
@@ -50,13 +64,39 @@ func setupLogger(env string) *slog.Logger {
 
 func parseDbUrl(env *config.Config) string {
 	return fmt.Sprintf(
-		"postgres://%v:%v@%v:%v/%v",
+		"postgres://%v:%v@%v:%v/%v?sslmode=disable",
 		env.Postgres.User,
 		env.Postgres.Password,
 		env.Postgres.Host,
 		env.Postgres.Port,
 		env.Postgres.Database,
 	)
+}
+
+func migratedb(dbpath string) error {
+	db, err := sql.Open("postgres", dbpath)
+	if err != nil {
+		return err
+	}
+	driver, err := postgres.WithInstance(db, &postgres.Config{})
+	if err != nil {
+		return err
+	}
+	mpath := path.Clean(basepath + "./../../postgres/migrations")
+	mpath = fmt.Sprintf("file://%v", mpath)
+	m, err := migrate.NewWithDatabaseInstance(
+		mpath, "postgres", driver,
+	)
+	if err != nil {
+		return err
+	}
+	err = m.Up()
+	if err != nil {
+		if !errors.Is(err, migrate.ErrNoChange) {
+			return err
+		}
+	}
+	return nil
 }
 
 func main() {
@@ -66,7 +106,12 @@ func main() {
 	slog.SetDefault(log)
 
 	url := parseDbUrl(cfg)
-	_, err := storage.New(url)
+	err := migratedb(url)
+	if err != nil {
+		slog.Error(err.Error())
+		os.Exit(1)
+	}
+	_, err = storage.New(url)
 	if err != nil {
 		slog.Error(err.Error())
 		os.Exit(1)
