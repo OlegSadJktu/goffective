@@ -1,27 +1,46 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"runtime"
-	"time"
 
+	_ "github.com/OlegSadJktu/goffective/docs"
 	"github.com/OlegSadJktu/goffective/internal/config"
-	mid "github.com/OlegSadJktu/goffective/internal/httpserver/middleware"
-	"github.com/OlegSadJktu/goffective/internal/storage"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/golang-migrate/migrate/v4"
+	"github.com/OlegSadJktu/goffective/internal/dicontainer"
+	localpg "github.com/OlegSadJktu/goffective/internal/postgres"
+	"github.com/gin-gonic/gin"
+	"github.com/go-pg/pg/v10"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
+
+// @title           Goffective testing API
+// @version         1.0
+// @description     This is a sample server celler server.
+// @termsOfService  http://swagger.io/terms/
+
+// @contact.name   API Support
+// @contact.url    http://www.swagger.io/support
+// @contact.email  support@swagger.io
+
+// @license.name  Apache 2.0
+// @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @securityDefinitions.basic  BasicAuth
+
+// @externalDocs.description  OpenAPI
+// @externalDocs.url          https://swagger.io/resources/open-api/
 
 const (
 	envLocal = "local"
@@ -35,8 +54,7 @@ var (
 )
 
 var (
-	env            = flag.String("env", ".env", "Configuration file")
-	migrationsPath = flag.String("migrations", "./postgres/migrations", "Migrations path")
+	env = flag.String("env", ".env", "Configuration file")
 )
 
 func setupLogger(env string) *slog.Logger {
@@ -99,6 +117,19 @@ func migratedb(dbpath string) error {
 	return nil
 }
 
+func connectDb(url string) (*pg.DB, error) {
+	opt, err := pg.ParseURL(url)
+	if err != nil {
+		return nil, err
+	}
+	db := pg.Connect(opt)
+	err = db.Ping(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
 func main() {
 	flag.Parse()
 	cfg := config.MustLoad(*env)
@@ -111,20 +142,26 @@ func main() {
 		slog.Error(err.Error())
 		os.Exit(1)
 	}
-	_, err = storage.New(url)
+	db, err := connectDb(url)
 	if err != nil {
 		slog.Error(err.Error())
 		os.Exit(1)
 	}
+	db.AddQueryHook(localpg.DBLogger{})
+	container := dicontainer.New(db)
+	defer container.Close()
+	songsController := container.SongsController()
 
-	router := chi.NewRouter()
+	router := gin.New()
 
-	router.Use(mid.NewHttpLogger(log))
-	router.Use(middleware.Timeout(60 * time.Second))
-	router.Route("/songs", func(r chi.Router) {
-	})
+	router.GET("/songs", songsController.Get)
+	router.GET("/songs/:id", songsController.GetOne)
+	router.POST("/songs", songsController.Create)
+	router.DELETE("/songs/:id", songsController.Delete)
+	router.PUT("/songs/:id", songsController.Update)
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	err = http.ListenAndServe(fmt.Sprintf(":%v", cfg.Server.Port), router)
+	err = router.Run(fmt.Sprintf(":%v", cfg.Server.Port))
 	slog.Error(err.Error())
 
 }

@@ -26,6 +26,10 @@ func New(db *pg.DB) *DIContainer {
 	}
 }
 
+func (c *DIContainer) Close() {
+  c.db.Close()
+}
+
 func (c *DIContainer) SongsRepo() *rsongs.SongRepo {
 	if c.repos.SongRepo == nil {
 		c.repos.SongRepo = rsongs.New(c.db)

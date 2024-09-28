@@ -1,6 +1,6 @@
-CREATE TABLE song (
+CREATE TABLE songs (
   id BIGSERIAL PRIMARY KEY,
-  releaseDate date NOT NULL,
+  release_date date NOT NULL,
   link varchar(255),
   lyrics text
 );

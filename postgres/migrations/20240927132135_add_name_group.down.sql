@@ -1,0 +1,3 @@
+
+ALTER TABLE songs DROP COLUMN "group";
+ALTER TABLE songs DROP COLUMN "name";
